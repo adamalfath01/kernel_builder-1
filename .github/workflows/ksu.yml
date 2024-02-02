@@ -38,26 +38,18 @@ jobs:
           
       - name: Build kernel
         run: |
+          cd kernel-source
+          export PATH="$GITHUB_WORKSPACE/toolchain/linux-x86/clang-r498229b/bin:$PATH"
+          export TC_DIR="$GITHUB_WORKSPACE/toolchain/linux-x86"
+          export CLANG_DIR="$GITHUB_WORKSPACE/toolchain/linux-x86/clang-r498229b"
+          export GCC_64_DIR="$GITHUB_WORKSPACE/toolchain/aarch64-linux-android-4.9"
+          export GCC_32_DIR="$GITHUB_WORKSPACE/toolchain/arm-linux-androideabi-4.9"
           export KBUILD_BUILD_USER="Kernel"
           export KBUILD_BUILD_HOST="Koplak"
-          args=" out=out \
-                 ARCH=arm64 \
-                 CC=clang  \
-                 LD=ld.lld \
-                 AR=llvm-ar \
-                 AS=llvm-as \
-                 NM=llvm-nm \
-                 OBJCOPY=llvm-objcopy \
-                 OBJDUMP=llvm-objdump \
-                 STRIP=llvm-strip \
-                 CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android- \
-                 CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/toolchain/arm-linux-androideabi-4.9/bin/arm-linux-androideabi- \
-                 CLANG_TRIPLE=aarch64-linux-gnu- "
-          cd kernel-source
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
           git apply KernelSU-hook.patch
-          make ${args} vendor/ginkgo-perf_defconfig
-          make -j$(nproc --all) ${args} Image.gz-dtb dtbo.img
+          make 0=out ARCH=arm64 vendor/ginkgo-perf_defconfig
+          make -j$(nproc --all) 0=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android- CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/toolchain/arm-linux-androideabi-4.9/bin/arm-linux-androideabi- CLANG_TRIPLE=aarch64-linux-gnu- Image.gz-dtb dtbo.img
 
       - name: Package kernel
         run: |
