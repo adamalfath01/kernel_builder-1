@@ -12,7 +12,6 @@ jobs:
       - uses: actions/checkout@v3
       - name: Setup environment
         run: |
-          sudo apt install python2 -y
           echo "ANYKERNEL_SOURCE=$(cat config.env | grep -w "ANYKERNEL_SOURCE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
           echo "ANYKERNEL_SOURCE_BRANCH=$(cat config.env | grep -w "ANYKERNEL_SOURCE_BRANCH" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
           echo "KERNEL_SOURCE=$(cat config.env | grep -w "KERNEL_SOURCE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
@@ -20,11 +19,17 @@ jobs:
           echo "KERNEL_TARGET=$(cat config.env | grep -w "KERNEL_TARGET" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
           echo "BUILD_ARGS=$(cat config.env | grep -w "BUILD_ARGS" | head -n 1 | cut -d ":" -f 2)" >> $GITHUB_ENV
           echo "BUILD_TIME=$(TZ=Asia/Jakarta date "+%H-%M~%d_%m_%Y")" >> $GITHUB_ENV
-
+          export TC_DIR="$GITHUB_WORKSPACE/toolchain/linux-x86"
+          export CLANG_DIR="$GITHUB_WORKSPACE/toolchain/linux-x86/clang-r498229b"
+          export GCC_64_DIR="$GITHUB_WORKSPACE/toolchain/aarch64-linux-android-4.9"
+          export GCC_32_DIR="$GITHUB_WORKSPACE/toolchain/arm-linux-androideabi-4.9"
+          
       - name: Pull toolchain
         run: |
-          mkdir clang && git clone -b clang-13.0 https://github.com/kutemeikito/RastaMod69-Clang.git clang --depth=1
-
+          mkdir clang && git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ${TC_DIR}
+          mkdir gcc64 && git clone --depth=1 -b lineage-19.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git ${GCC_64_DIR}
+          mkdir gcc32 && git clone --depth=1 -b lineage-19.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git ${GCC_32_DIR}
+          
       - name: Pull kernel source
         run: |
           git clone --depth=1 ${{ env.KERNEL_SOURCE }} -b ${{ env.KERNEL_SOURCE_BRANCH }} kernel-source
@@ -34,21 +39,28 @@ jobs:
         run: |
           export KBUILD_BUILD_USER="Kernel"
           export KBUILD_BUILD_HOST="Koplak"
-          export PATH=$GITHUB_WORKSPACE/clang/bin:${PATH}
-          args="                  ARCH=arm64 \
-                                  O=../out \
-                                  ${{ env.BUILD_ARGS }} \
-                                  CLANG_TRIPLE=aarch64-linux-gnu- \
-                                  CROSS_COMPILE=$GITHUB_WORKSPACE/clang/bin/aarch64-linux-gnu- \
-                                  CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/clang/bin/arm-linux-gnueabi- "
+          args=" out=out \
+                 ARCH=arm64 \
+                 CC=clang  \
+                 LD=ld.lld \
+                 AR=llvm-ar \
+                 AS=llvm-as \
+                 NM=llvm-nm \
+                 OBJCOPY=llvm-objcopy \
+                 OBJDUMP=llvm-objdump \
+                 STRIP=llvm-strip \
+                 CROSS_COMPILE=$GCC_64_DIR/bin/aarch64-linux-android- \
+                 CROSS_COMPILE_ARM32=$GCC_32_DIR/bin/arm-linux-androideabi- \
+                 CLANG_TRIPLE=aarch64-linux-gnu- "
           cd kernel-source
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          git apply KernelSU-hook.patch
           make ${args} vendor/ginkgo-perf_defconfig
-          make -j$(($(getconf _NPROCESSORS_ONLN) * 2)) ${args}
+          make -j$(nproc --all) ${args} Image.gz-dtb dtbo.img
 
       - name: Package kernel
         run: |
-          git clone --depth=1 ${{ env.ANYKERNEL_SOURCE }} -b ${{ env.ANYKERNEL_SOURCE_BRANCH }} AnyKernel3 && rm -rf AnyKernel3/.git AnyKernel3/.github AnyKernel3/LICENSE AnyKernel3/README.md
+          git clone -b master https://github.com/kutemeikito/AnyKernel3 AnyKernel3 && rm -rf '*.git*' README.md *placeholder
           if [[ -f out/arch/arm64/boot/Image.gz-dtb ]]; then
             cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/Image.gz-dtb
           elif [[ -f out/arch/arm64/boot/Image-dtb ]]; then
@@ -65,5 +77,5 @@ jobs:
       - name: Upload kernel to artifact
         uses: actions/upload-artifact@v3
         with:
-          name: linux-v4.14.333-${{ env.BUILD_TIME }}
+          name: Ryzen-AOSP-11_14-${{ env.BUILD_TIME }}
           path: AnyKernel3/*
